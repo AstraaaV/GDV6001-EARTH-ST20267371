@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using UnityEngine;
+using Debug = UnityEngine.Debug;
+
 
 #if UNITY_EDITOR
 using UnityEditor;
@@ -12,6 +14,11 @@ public class TerrainGenerator : MonoBehaviour
     public float noiseScale = 0.1f;
     public float heightMultiplier = 10f;
     public int seed = 0;
+
+    [Header("Terrain Materials")]
+    public Material grassMaterial;
+    public Material rockMaterial;
+    public Material snowMaterial;
 
     private Mesh mesh;
     private Vector3[] vertices;
@@ -34,7 +41,8 @@ public class TerrainGenerator : MonoBehaviour
     public void GenerateTerrain()
     {
         mesh = new Mesh();
-        GetComponent<MeshFilter>().mesh = mesh;
+        var meshf = GetComponent<MeshFilter>();
+        meshf.sharedMesh = mesh;
 
         vertices = new Vector3[(width + 1) * (depth + 1)];
         Random.InitState(seed);
@@ -45,7 +53,16 @@ public class TerrainGenerator : MonoBehaviour
             {
                 float sampleX = (x + seed) * noiseScale;
                 float sampleZ = (z + seed) * noiseScale;
-                float y = Mathf.PerlinNoise(sampleX, sampleZ);
+                float nx = sampleX * 0.005f;
+                float nz = sampleZ * 0.005f;
+
+                float baseNoise = Mathf.PerlinNoise(nx, nz);
+                float ridgeNoise = 1f - Mathf.Abs(Mathf.PerlinNoise(nx * 0.7f, nz * 0.7f) * 2f - 1f);
+                float detailNoise = Mathf.PerlinNoise(nx * 3f, nz * 3f) * 0.2f;
+                float y = (baseNoise * 0.6f + ridgeNoise * 0.4f + detailNoise) * heightMultiplier;
+                y = Mathf.Pow(y / heightMultiplier, 1.5f) * heightMultiplier;
+                y += Mathf.PerlinNoise(nx * 0.2f + 10, nz * 0.2f + 10) * 2f - 1f;
+
                 vertices[i] = new Vector3(x, y, z);
             }
         }
@@ -69,13 +86,30 @@ public class TerrainGenerator : MonoBehaviour
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
 
-        GetComponent<MeshCollider>().sharedMesh = mesh;
-
         var renderer = GetComponent<MeshRenderer>();
-        Shader shader = Shader.Find("Universal Render Pipeline/Lit");
-        if (shader == null) shader = Shader.Find("Standard");
-        renderer.sharedMaterial = new Material(shader);
-        renderer.sharedMaterial.color = Color.green;
+
+        if (renderer.sharedMaterial == null)
+        {
+            Debug.Log("Assign a material.");
+        }
+
+        Color[] colours = new Color[vertices.Length];
+
+        for(int i = 0; i < vertices.Length; i++)
+        {
+            float heightPercent = vertices[i].y / heightMultiplier;
+
+            if (heightPercent < 0.4f)
+                colours[i] = Color.green;
+            else if (heightPercent < 0.75f)
+                colours[i] = Color.gray;
+            else
+                colours[i] = Color.white;
+        }
+
+        mesh.colors = colours;
+
+        GetComponent<MeshCollider>().sharedMesh = mesh;
     }
 
 #if UNITY_EDITOR
